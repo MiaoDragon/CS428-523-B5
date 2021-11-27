@@ -9,6 +9,7 @@ public class StoryBehaviorTree : MonoBehaviour
     public Transform wander2;
     public Transform wander3;
     public GameObject doll;
+    public GameObject startLine;
 
     private BehaviorAgent behaviorAgent;
     // Use this for initialization
@@ -31,25 +32,63 @@ public class StoryBehaviorTree : MonoBehaviour
         return new Sequence(actor.GetComponent<BehaviorMecanim>().Node_GoTo(position), new LeafWait(1000));
     }
 
-    protected Node PreGame_Doll()
+    #region Doll-Related Functions
+    /* pregame */
+    protected Node PreGame_Doll(GameObject[] players)
     {
 
-        Node action = this.ST_ApproachAndWait(doll, this.wander1);
-        return new Sequence(new LeafTrace("running doll pregame"), action);
+        //Node action = this.ST_ApproachAndWait(doll, this.wander1);
+        //return new Sequence(new LeafTrace("running doll pregame"), action);
+
+        // check whether player crosses line. If so, change status to dead
+        Node[] checks = new Node[players.Length];
+        for (int i = 0; i < players.Length; i++)
+        {
+            checks[i] = PreGame_Check_Doll(players[i]);
+        }
+        return new DecoratorLoop(new Sequence(checks));
 
     }
+    protected Node PreGame_Check_Doll(GameObject player)
+    {
+        Func<bool> cross = () => (player.transform.position.z < startLine.transform.position.z);
+        Func<bool> safe = () => (player.transform.position.z >= startLine.transform.position.z);
 
+        // if cross, then set the player to dead
+        Node alive = new Sequence(new LeafAssert(safe), new LeafTrace("Player didn't cross the line"));
+        Node deadAction = new LeafInvoke(() => {player.GetComponent<PlayerController>().alive = false; return RunStatus.Success;});
+        Node dead = new Sequence(new LeafAssert(cross), new LeafTrace("player has crossed the line"), deadAction, new LeafAssert(safe));
+        // run again the check for safe so that we can reset the loop
+        return new Selector(alive, dead);
+    }
+    #endregion
+
+    #region Player-Related Functions
+    /* pregame */
     protected Node PreGame_Player(GameObject player)
     {
-        Node action = this.ST_ApproachAndWait(player, this.wander1);
-        return new Sequence(new LeafTrace("running player pregame"), action);
+        Node action = new Sequence(this.ST_ApproachAndWait(player, this.wander1));
+        return CheckAlive_Player(player, action);
     }
+    protected Node CheckAlive_Player(GameObject player, Node alive_node)
+    {
+        // if alive: do other stuff
+        // otherwise: play dead
+        Func<bool> alive = () => (player.GetComponent<PlayerController>().alive);
+        Func<bool> dead = () => (!player.GetComponent<PlayerController>().alive);
 
+        Node playDead = player.GetComponent<BehaviorMecanim>().ST_PlayBodyGesture("DYING", 100);
+        Node deadBehavior = new Sequence(new LeafAssert(dead), playDead);
+        Node aliveBehavior = new Sequence(new LeafAssert(alive), alive_node);
+        return new Selector(aliveBehavior, deadBehavior);
+    }
+    #endregion
     protected Node PreGame_Loop(float timeout)
     {
         Debug.Log("here");
-        Node dollNode = PreGame_Doll();
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
+        Node dollNode = PreGame_Doll(players);
+
         Debug.Log("after adding players");
         Node debugger = new LeafTrace("number of players: " + players.Length);
         Node[] totalNodes = new Node[players.Length + 1];
