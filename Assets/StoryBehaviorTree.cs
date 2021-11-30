@@ -55,9 +55,9 @@ public class StoryBehaviorTree : MonoBehaviour
         Func<bool> safe = () => (player.transform.position.z >= startLine.transform.position.z);
 
         // if cross, then set the player to dead
-        Node alive = new Sequence(new LeafAssert(safe), new LeafTrace("Player didn't cross the line"));
+        Node alive = new Sequence(new LeafAssert(safe));//, new LeafTrace("Player didn't cross the line"));
         Node deadAction = new LeafInvoke(() => {player.GetComponent<PlayerController>().alive = false; return RunStatus.Success;});
-        Node dead = new Sequence(new LeafAssert(cross), new LeafTrace("player has crossed the line"), deadAction, new LeafAssert(safe));
+        Node dead = new Sequence(new LeafAssert(cross), deadAction, new LeafAssert(safe));
         // run again the check for safe so that we can reset the loop
         return new Selector(alive, dead);
     }
@@ -67,8 +67,10 @@ public class StoryBehaviorTree : MonoBehaviour
     /* pregame */
     protected Node PreGame_Player(GameObject player)
     {
-        Node action = new Sequence(this.ST_ApproachAndWait(player, this.wander1));
-        return CheckAlive_Player(player, action);
+        //Node action = new Sequence(this.ST_ApproachAndWait(player, this.wander1));
+
+        Node action = PreGame_Action_Player(player);
+        return new DecoratorLoop(CheckAlive_Player(player, action));
     }
     protected Node CheckAlive_Player(GameObject player, Node alive_node)
     {
@@ -82,14 +84,83 @@ public class StoryBehaviorTree : MonoBehaviour
         Node aliveBehavior = new Sequence(new LeafAssert(alive), alive_node);
         return new Selector(aliveBehavior, deadBehavior);
     }
+
+    protected Node RandomGoToRadius_Player(GameObject player, float radius)
+    {
+        // generate a random move within the radius
+        Val<Vector3> position = Val.V(() =>
+        {
+            Vector3 target_pos = player.transform.position;
+            // note: this is not the correct way of uniformly generating an angle, but we'll just use it
+            float rand_angle = UnityEngine.Random.value * Mathf.PI * 2;
+            float rand_radius = UnityEngine.Random.value * 0.8f * radius + 0.2f * radius;
+            float rand_x = Mathf.Cos(rand_angle) * rand_radius;
+            float rand_y = Mathf.Sin(rand_angle) * rand_radius;
+            target_pos.x = target_pos.x + rand_x;
+            target_pos.z = Mathf.Min(target_pos.z + rand_y, 24.0f);
+            Debug.Log("inside randomGoToRadius, rand_xy: " + rand_x + ", " + rand_y);
+
+            Debug.Log("inside randomGoToRadius, target: " + target_pos.ToString());
+
+            return target_pos;
+        }        
+        );
+        return new Sequence(player.GetComponent<BehaviorMecanim>().Node_GoTo(position), new LeafWait(4000));
+    }
+
+    protected Node RandomGoToRadiusSafe_Player(GameObject player, float radius)
+    {
+        // generate a random move within the radius
+        Val<Vector3> position = Val.V(() =>
+        {
+            Vector3 target_pos = player.transform.position;
+            float rand_angle = UnityEngine.Random.value * Mathf.PI * 2;
+            float rand_radius = UnityEngine.Random.value * 0.8f * radius + 0.2f*radius;
+            float rand_x = Mathf.Cos(rand_angle) * rand_radius;
+            float rand_y = Mathf.Sin(rand_angle) * rand_radius;
+
+            target_pos.x = target_pos.x + rand_x;
+            target_pos.z = Mathf.Min(Mathf.Max(target_pos.z + rand_y, startLine.transform.position.z), 24.0f);
+            Debug.Log("inside randomGoToRadiusSafe, rand_xy: " + rand_x + ", " + rand_y);
+
+            Debug.Log("inside randomGoToRadiusSafe, target: " + target_pos.ToString());
+            return target_pos;
+        }
+        );
+        return new Sequence(player.GetComponent<BehaviorMecanim>().Node_GoTo(position), new LeafWait(4000));
+    }
+
+
+    protected Node PreGame_Action_Player(GameObject player)
+    {
+        /** perform actions with random probabilities
+         *  potential actions:
+         *  1. move to random location within a radius
+         *  2. move to random location within a radius, and do not cross the line
+         *  3. dance
+         *  4. discuss with other players
+         *  5. have a fight with other players
+         **/
+        int num_actions = 3;
+        NodeWeight[] pregame_actions = new NodeWeight[num_actions];
+
+        // action 1: random move
+        pregame_actions[0] = new NodeWeight(0.1f, RandomGoToRadius_Player(player, 8.0f));
+        // action 2: random move within startline
+        pregame_actions[1] = new NodeWeight(0.5f, RandomGoToRadiusSafe_Player(player, 8.0f));
+
+        // action 3: dance
+        pregame_actions[2] = new NodeWeight(0.2f, player.GetComponent<BehaviorMecanim>().ST_PlayBodyGesture("BREAKDANCE", 2000));
+
+        Node action_node = new Sequence(new LeafTrace("before executing action"), new SelectorShuffle(pregame_actions));
+        return action_node;
+    }
     #endregion
     protected Node PreGame_Loop(float timeout)
     {
-        Debug.Log("here");
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
         Node dollNode = PreGame_Doll(players);
 
-        Debug.Log("after adding players");
         Node debugger = new LeafTrace("number of players: " + players.Length);
         Node[] totalNodes = new Node[players.Length + 1];
         totalNodes[0] = dollNode;
