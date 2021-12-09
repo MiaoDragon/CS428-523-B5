@@ -4,6 +4,8 @@ using UnityEngine;
 
 public class BulletObjectController : MonoBehaviour
 {
+
+
     // Start is called before the first frame update
     void Start()
     {
@@ -14,7 +16,9 @@ public class BulletObjectController : MonoBehaviour
     void Update()
     {
         // check whether the bullet is out of the scene. If so remove it
-        if (transform.position.x < -25 || transform.position.x > 25 || transform.position.z < -25 || transform.position.z > 25)
+        if (transform.position.x < -25 || transform.position.x > 25 || 
+            transform.position.z < -25 || transform.position.z > 25 ||
+            transform.position.y > 25)
         {
             Destroy(this);
         }

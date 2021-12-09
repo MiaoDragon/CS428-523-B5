@@ -17,9 +17,9 @@ public class StoryBehaviorTree : MonoBehaviour
     // Use this for initialization
     void Start()
     {
-        behaviorAgent = new BehaviorAgent(this.BuildTreeRoot());
-        BehaviorManager.Instance.Register(behaviorAgent);
-        behaviorAgent.StartBehavior();
+        //behaviorAgent = new BehaviorAgent(this.BuildTreeRoot());
+        //BehaviorManager.Instance.Register(behaviorAgent);
+        //behaviorAgent.StartBehavior();
     }
 
     // Update is called once per frame
@@ -190,12 +190,14 @@ public class StoryBehaviorTree : MonoBehaviour
         NodeWeight[] pregame_actions = new NodeWeight[num_actions];
 
         // action 1: random move
-        pregame_actions[0] = new NodeWeight(0.1f, RandomGoToRadius_Player(player, 8.0f));
+        pregame_actions[0] = new NodeWeight(0.12f, RandomGoToRadius_Player(player, 8.0f));
         // action 2: random move within startline
-        pregame_actions[1] = new NodeWeight(0.5f, RandomGoToRadiusSafe_Player(player, 8.0f));
+        pregame_actions[1] = new NodeWeight(0.7f, RandomGoToRadiusSafe_Player(player, 8.0f));
 
         // action 3: dance
-        pregame_actions[2] = new NodeWeight(0.2f, player.GetComponent<BehaviorMecanim>().ST_PlayBodyGesture("BREAKDANCE", 2000));
+        pregame_actions[2] = new NodeWeight(0.1f, new LeafWait(500));
+
+        //pregame_actions[2] = new NodeWeight(0.1f, player.GetComponent<BehaviorMecanim>().ST_PlayBodyGesture("BREAKDANCE", 1000));
 
         Node action_node = new Sequence(new SelectorShuffle(pregame_actions));
         return action_node;
@@ -214,14 +216,16 @@ public class StoryBehaviorTree : MonoBehaviour
             totalNodes[i + 1] = playerNode;
         }
         Node parallelNode = new SequenceParallel(totalNodes);
-        Node loopNode = new DecoratorLoop((int)(timeout / Time.deltaTime), parallelNode);
+        //Node loopNode = new DecoratorLoop((int)(timeout / Time.deltaTime), parallelNode);
+        Node loopNode = new LoopUntilTimeOut(parallelNode, Val.V(() => ((long)(timeout * 1000))));
+
         return new Sequence(loopNode);
         //return new Sequence(participant.GetComponent<BehaviorMecanim>().Node_GoTo(position), new LeafWait(1000));
     }
 
 
 
-    protected Node BuildTreeRoot()
+    public Node BuildTreeRoot()
     {
         //Node roaming = new DecoratorLoop(
         //    new Sequence(
@@ -230,10 +234,9 @@ public class StoryBehaviorTree : MonoBehaviour
         //        this.ST_ApproachAndWait(this.wander3)));
         //Node trigger = new DecoratorLoop(new LeafAssert(act));
         //Node root = new DecoratorLoop(new DecoratorForceStatus(RunStatus.Success, new SequenceParallel(trigger, roaming)));
-        Debug.Log("building tree root");
-        Node root = new DecoratorLoop(new DecoratorForceStatus(RunStatus.Success, 
-                                      new Sequence(PreGame_Loop(10.0f))));
-        Debug.Log("after building");
+        //Node root = new DecoratorLoop(new DecoratorForceStatus(RunStatus.Success, 
+        //                              new Sequence(PreGame_Loop(10.0f))));
+        Node root = PreGame_Loop(20.0f);
 
         return root;
     }
