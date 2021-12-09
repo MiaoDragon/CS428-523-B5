@@ -117,19 +117,26 @@ public class EndGameBehaviorTree : MonoBehaviour
     }
 
 
-    protected Node endgame_check_alive(GameObject player)
+    protected Node endgame_alive_behavior()
     {
-        Func<bool> alive = () => (player.GetComponent<PlayerController>().alive);
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
 
         Node[] totalNodes = new Node[players.Length];
         for (int i = 0; i < players.Length; i++)
         {
-            Node playerNode = endgame_checked_alive(players[i]);
+            Func<bool> alive = () => (players[i].GetComponent<PlayerController>().alive);
+
+            Node playerNode = new Sequence(new LeafAssert(alive), endgame_checked_alive(players[i]));
             totalNodes[i] = playerNode;
         }
-        Node res_node = new Sequence(new LeafAssert(alive),  new SequenceParallel(totalNodes));
+        Node res_node = new SequenceParallel(totalNodes);
         return res_node;
+    }
+
+    protected Node endgame_check_alive(GameObject player)
+    {
+        Func<bool> alive = () => (player.GetComponent<PlayerController>().alive);
+        return new LeafAssert(alive);
     }
 
     protected Node endgame_player_dead()
@@ -137,6 +144,7 @@ public class EndGameBehaviorTree : MonoBehaviour
         // executing this node means all players are dead
         return endgame_doll_check_hp(ending_doll_win(), ending_draw());
     }
+
 
     public Node BuildTreeRoot()
     {
@@ -150,15 +158,15 @@ public class EndGameBehaviorTree : MonoBehaviour
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
         Node player_dead_node = endgame_player_dead();
 
-        Node[] totalNodes = new Node[players.Length + 1];
-        totalNodes[players.Length] = player_dead_node;
+        Node[] totalNodes = new Node[players.Length];
+        //totalNodes[players.Length] = player_dead_node;
         for (int i = 0; i < players.Length; i++)
         {
-            Node playerNode = endgame_check_alive(players[i]);
+            Node playerNode = new Sequence(new LeafTrace("before checking"), endgame_check_alive(players[i]), new LeafTrace("after checking"), endgame_checked_alive(players[i]));
             totalNodes[i] = playerNode;
         }
-        Node selection_node = new Selector(totalNodes);
 
+        Node selection_node = new Selector(new SelectorParallel(totalNodes), player_dead_node);
 
         return selection_node;
     }

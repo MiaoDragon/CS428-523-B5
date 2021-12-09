@@ -352,8 +352,8 @@ public class MidGameBehaviorTree : MonoBehaviour
         // loop until duration has passed
         Node green_light_node = new LoopUntilTimeOut(green_light_behavior(), 5000);
         Node red_light_node = new LoopUntilTimeOut(red_light_behavior(), 5000);
-        Node root_sequence = new Sequence(green_light_node, red_light_node);
-        Node loop_node = new LoopUntilTimeOut(root_sequence, 100000);
+        Node root_sequence = new Sequence(green_light_node, red_light_node, new LeafWait(100));
+        Node loop_node = new LoopUntilTimeOut(root_sequence, 100050);
 
         //Node after_math_node = new shoot_all_players_after();
         return loop_node;
