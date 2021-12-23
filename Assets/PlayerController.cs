@@ -70,4 +70,10 @@ public class PlayerController : MonoBehaviour
     {
         this.alive = val;
     }
+
+    public bool isAlive(){
+        return this.alive;
+    }
+
+
 }
