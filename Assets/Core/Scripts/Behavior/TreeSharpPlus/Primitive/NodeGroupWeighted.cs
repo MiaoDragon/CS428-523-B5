@@ -17,8 +17,9 @@ namespace TreeSharpPlus
         {
             //this.Children.Shuffle(this.Weights);
             {
-                var rng = new System.Random();
-
+                
+                System.Random rng = new System.Random();
+                
                 // Iterate through the list and build a range list (0..n-1) and count
                 // the weight total
                 double total = 0.0;
@@ -69,9 +70,6 @@ namespace TreeSharpPlus
                 foreach (Node val in order)
                     this.Children.Add(val);
             }
-
-
-
         }
 
         /// <summary>

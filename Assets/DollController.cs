@@ -11,7 +11,7 @@ public class DollController : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        hp = 20;
+        hp = 125;
         default_face = this.transform.forward * 2 + this.transform.position + this.transform.up * 9;
     }
 

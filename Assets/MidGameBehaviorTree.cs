@@ -172,6 +172,9 @@ public class MidGameBehaviorTree : MonoBehaviour
         {
             player.GetComponent<PlayerController>().moving = true;
             // spawn a stone
+
+            //UnityEngine.Object.Destroy(player.GetComponent<PlayerController>().stone);
+
             //player.GetComponent<PlayerController>().stone = Instantiate(player.GetComponent<PlayerController>().stonePrefab, 
             //                                                            player.GetComponent<PlayerController>().stone_transform);
             player.GetComponent<PlayerController>().stone.SetActive(true);
@@ -218,7 +221,7 @@ public class MidGameBehaviorTree : MonoBehaviour
         // walk in the z decreasing direction
         Vector3 direction = new Vector3(0, 0, -1);
         // randomly generate a distance in 0~3
-        float max_distance = 2.0f;
+        float max_distance = 6.0f;
         float distance = UnityEngine.Random.value * max_distance;
 
         Func<Vector3> get_target = () => (player.transform.position + direction * distance);
@@ -280,11 +283,17 @@ public class MidGameBehaviorTree : MonoBehaviour
         green_light_actions[3] = new NodeWeight(0.15f, GoToAndHit(player, selected_player));
 
 
+        Func<RunStatus> init_state_f = () =>
+        {
+            UnityEngine.Random.InitState((int)(Time.fixedTime) + player.GetInstanceID() * 10);
+            return RunStatus.Success;
+        };
+        Node init_state_node = new LeafInvoke(init_state_f);
 
         Node alive_action = new SelectorShuffle(green_light_actions);
 
 
-        Node alive_node = new Sequence(alive_action);
+        Node alive_node = new Sequence(init_state_node, alive_action);
 
         // check if hit
         Node total_node = check_hit(player, alive_node);
@@ -337,7 +346,6 @@ public class MidGameBehaviorTree : MonoBehaviour
         float radius = 2.0f;
         float distance = 6.0f;
         float angle_radius = Mathf.PI / 180.0f * 90.0f;
-
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
         Func<RunStatus> before_hit_func = () =>
         {
@@ -363,9 +371,7 @@ public class MidGameBehaviorTree : MonoBehaviour
             }
             return RunStatus.Success;
         };
-
         return new Sequence(new LeafInvoke(before_hit_func), hit, new LeafInvoke(after_hit_func));
-        //return new Sequence(walk, hit, new LeafInvoke(after_hit));
     }
 
 
@@ -438,7 +444,6 @@ public class MidGameBehaviorTree : MonoBehaviour
     
     protected Node red_light_player_node(GameObject player)
     {
-
         if (player.GetComponent<PlayerController>().controllable)
         {
             return CheckAlive_Player(player, human_move(player));
@@ -447,9 +452,9 @@ public class MidGameBehaviorTree : MonoBehaviour
         NodeWeight[] red_light_actions = new NodeWeight[3];
 
         // action 1: random move
-        red_light_actions[0] = new NodeWeight(0.05f, walk_forward_player(player));
+        red_light_actions[1] = new NodeWeight(0.01f, walk_forward_player(player));
         // action 2: random move within startline
-        red_light_actions[1] = new NodeWeight(0.9f, new LeafWait(1000));
+        red_light_actions[0] = new NodeWeight(1.0f, new LeafWait(2000));
 
         // action 4: hit someone
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
@@ -470,11 +475,18 @@ public class MidGameBehaviorTree : MonoBehaviour
             break;
         }
 
-        red_light_actions[2] = new NodeWeight(0.05f, GoToAndHit(player, selected_player));
+        Func<RunStatus> init_state_f = () => 
+        {
+            UnityEngine.Random.InitState((int)(Time.fixedTime) + player.GetInstanceID() * 10);
+            return RunStatus.Success;
+        };
+        Node init_state_node = new LeafInvoke(init_state_f);
+
+        red_light_actions[2] = new NodeWeight(0.01f, GoToAndHit(player, selected_player));
 
         Node alive_action = new SelectorShuffle(red_light_actions);
 
-        Node alive_node = new Sequence(alive_action);
+        Node alive_node = new Sequence(init_state_node, alive_action);
         Node total_node = check_hit(player, alive_node);
 
         return CheckAlive_Player(player, total_node);
