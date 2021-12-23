@@ -9,6 +9,7 @@ public class PlayerController : MonoBehaviour
     public bool controllable = false;
     public bool alive = true;
     public bool moving = false;
+    public bool hit = false;  // indicate whether the player is hit by another one
     public GameObject stonePrefab;
     public Transform stone_transform;
     public GameObject stone;
@@ -16,6 +17,7 @@ public class PlayerController : MonoBehaviour
     public float vertical = 0.0f;
     public float velocityScale = 1.0f;
     public bool space_triggered = false;
+    public bool p_triggered = false;
 
     public InteractionObject rightKickPoint;
     // Start is called before the first frame update
@@ -23,8 +25,8 @@ public class PlayerController : MonoBehaviour
     {
         alive = true;
         moving = false;
-       stone.SetActive(false);
-
+        stone.SetActive(false);
+        hit = false;
 
     }
 
@@ -41,6 +43,14 @@ public class PlayerController : MonoBehaviour
         if (Input.GetKeyUp("space"))
         {
             space_triggered = false;
+        }
+        if (Input.GetKey("p"))
+        {
+            p_triggered = true;
+        }
+        if (Input.GetKeyUp("p"))
+        {
+            p_triggered = false;
         }
 
         if (stone.transform.position.x < -25 || stone.transform.position.x > 25 ||

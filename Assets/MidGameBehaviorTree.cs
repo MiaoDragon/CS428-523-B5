@@ -17,6 +17,10 @@ public class MidGameBehaviorTree : MonoBehaviour
     public GameObject bulletPrefab;
     public GameObject screen;
 
+    public float green_light_time = 5.0f;
+    public float red_light_time = 5.0f;
+    public float total_time = 100.0f;
+
     private BehaviorAgent behaviorAgent;
     // Start is called before the first frame update
     void Start()
@@ -37,6 +41,130 @@ public class MidGameBehaviorTree : MonoBehaviour
     //    // check if the doll is alive
 
     //}
+
+    public Node GoToStatic(GameObject player, Func<Vector3> get_target_func)
+    {
+        Vector3 saved_target = player.transform.position;
+        Func<RunStatus> set_target_value = () =>
+        {
+            Vector3 target = get_target_func();
+            saved_target = target;
+
+            return RunStatus.Success;
+        };
+        Func<Vector3> new_get_target_func = () =>
+        {
+            return saved_target;
+        };
+        return new Sequence(new LeafInvoke(set_target_value), player.GetComponent<BehaviorMecanim>().Node_GoTo(new_get_target_func));
+    }
+
+    public Node GoUpToDistance(GameObject player, Func<Vector3> get_target_func, float distance)
+    {
+        Vector3 previous_position = player.transform.position;
+        float traveled_distance = 0.0f;
+
+        Func<RunStatus> set_prev_position = () =>
+        {
+            previous_position = player.transform.position;
+            return RunStatus.Success;
+        };
+
+        Func<Vector3> new_get_target_func = () =>
+        {
+            Vector3 target = get_target_func();
+            // if distance has passed, then stop
+            Vector3 travel = player.transform.position - previous_position;
+            traveled_distance += travel.magnitude;
+            if (traveled_distance >= distance)
+            {
+                return player.transform.position;
+            }
+            previous_position = player.transform.position;
+            return target;
+        };
+        return new Sequence(new LeafInvoke(set_prev_position), player.GetComponent<BehaviorMecanim>().Node_GoTo(new_get_target_func));
+    }
+
+
+    protected Node check_hit(GameObject player, Node action)
+    {
+        // if the player is hit, then play the hit action
+        // otherwise, go do action
+        Func<bool> hit_func = () => (player.GetComponent<PlayerController>().hit);
+        Func<RunStatus> before_anim_func = () =>
+        {
+            player.GetComponent<PlayerController>().moving = true;
+            return RunStatus.Success;
+        };
+        Node hit_anim_node = player.GetComponent<BehaviorMecanim>().ST_PlayBodyGesture("DUCK", 2000);
+
+        Func<RunStatus> reset_hit_func = () =>
+        {
+            player.GetComponent<PlayerController>().hit = false;
+            player.GetComponent<PlayerController>().moving = false;
+            return RunStatus.Success;
+        };
+        Node before_anim_node = new LeafInvoke(before_anim_func);
+        Node reset_hit_node = new LeafInvoke(reset_hit_func);
+        Node stop_anim = player.GetComponent<BehaviorMecanim>().Node_BodyAnimation("DUCK", false);
+
+        Node check_hit_node = new IfElseNode(hit_func, new Sequence(before_anim_node, hit_anim_node, reset_hit_node), 
+            new Sequence(new LeafTrace("player " + player.name + " check hit false, stop animation and take action"), stop_anim, action));
+        return check_hit_node;
+    }
+
+    protected Node GoToAndHit(GameObject player, GameObject target_player)
+    {
+        // the player go to the other player and hit him from behind
+        // when the player is close enough to the other player, hit the other player
+        // if the player is too far, go to the player's direction for some distance instead
+        float radius = 2.0f;
+        float distance = 6.0f;
+        Func<Vector3> get_target_func = () =>
+        {
+            Vector3 direction = target_player.transform.position - player.transform.position;
+            direction = direction.normalized;
+            Vector3 target_location = target_player.transform.position - direction * radius * 0.8f;
+            direction = target_location - player.transform.position;
+            direction = direction.normalized;
+            // cap the target location by the distance
+            float distance_to_cur = Mathf.Min((target_location - player.transform.position).magnitude, distance);
+            return player.transform.position + direction * distance_to_cur;
+        };
+        Func<bool> check_within_radius_f = () =>
+        {
+            Vector3 direction = target_player.transform.position - player.transform.position;
+            return direction.magnitude <= radius;
+        };
+        Func<RunStatus> before_move = () =>
+        {
+            player.GetComponent<PlayerController>().moving = true;
+            return RunStatus.Success;
+        };
+
+        Func<RunStatus> after_move = () =>
+        {
+            player.GetComponent<PlayerController>().moving = false;
+            return RunStatus.Success;
+        };
+
+        Node walk = new Sequence(new LeafInvoke(before_move), GoUpToDistance(player, get_target_func, distance), new LeafInvoke(after_move));
+        Node face = player.GetComponent<BehaviorMecanim>().Node_OrientTowards(Val.V(() => (target_player.transform.position)));
+        Node hit = player.GetComponent<BehaviorMecanim>().ST_PlayHandGesture("HITSTEALTH", Val.V(() => ((long)(500))));
+        Func<RunStatus> after_hit = () =>
+        {
+            target_player.GetComponent<PlayerController>().hit = true;
+            return RunStatus.Success;
+        };
+
+
+        Node hit_node = new Sequence(new LeafInvoke(before_move), face, hit, new LeafInvoke(after_hit), new LeafInvoke(after_move));
+        Node check_node = new IfElseNode(check_within_radius_f, hit_node, new LeafAssert(() => (true)));
+        Node start_node = new IfElseNode(check_within_radius_f, hit_node, new Sequence(walk, check_node));
+        return start_node;
+        //return new Sequence(walk, hit, new LeafInvoke(after_hit));
+    }
 
     protected Node pick_and_throw(GameObject player)
     {
@@ -83,6 +211,8 @@ public class MidGameBehaviorTree : MonoBehaviour
         return action_node;
     }
 
+
+
     protected Node walk_forward_player(GameObject player)
     {
         // walk in the z decreasing direction
@@ -91,11 +221,10 @@ public class MidGameBehaviorTree : MonoBehaviour
         float max_distance = 2.0f;
         float distance = UnityEngine.Random.value * max_distance;
 
-        Val<Vector3> target = Val.V(() => (player.transform.position + direction * distance));
-
+        Func<Vector3> get_target = () => (player.transform.position + direction * distance);
         //player.GetComponent<PlayerController>().moving = true;  // is moving
 
-        Node move_node = player.GetComponent<BehaviorMecanim>().Node_GoTo(target);
+        Node move_node = GoToStatic(player, get_target);
 
         Func<RunStatus> before_move_func = () =>
         {
@@ -120,7 +249,7 @@ public class MidGameBehaviorTree : MonoBehaviour
             return CheckAlive_Player(player, human_move(player));
         }
 
-        NodeWeight[] green_light_actions = new NodeWeight[3];
+        NodeWeight[] green_light_actions = new NodeWeight[4];
 
         // action 1: random move
         green_light_actions[0] = new NodeWeight(0.7f, walk_forward_player(player));
@@ -129,25 +258,60 @@ public class MidGameBehaviorTree : MonoBehaviour
 
         green_light_actions[2] = new NodeWeight(0.1f, pick_and_throw(player));
 
+        // action 4: hit someone
+        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
+        GameObject selected_player = players[0];
+        while (true)
+        {
+            // sample one player until it's not the current player
+            int idx = UnityEngine.Random.Range(0, players.Length);
+            if (!players[idx].GetComponent<PlayerController>().alive)
+            {
+                continue;
+            }
+            if (players[idx].name == player.name)
+            {
+                continue;
+            }
+            selected_player = players[idx];
+            break;
+        }
+
+        green_light_actions[3] = new NodeWeight(0.15f, GoToAndHit(player, selected_player));
+
+
+
         Node alive_action = new SelectorShuffle(green_light_actions);
 
 
         Node alive_node = new Sequence(alive_action);
 
-        return CheckAlive_Player(player, alive_node);
+        // check if hit
+        Node total_node = check_hit(player, alive_node);
+
+        return CheckAlive_Player(player, total_node);
+    }
+
+    protected Node green_light_doll_node()
+    {
+        Val<Vector3> target = Val.V(() => (doll.GetComponent<DollController>().default_face));
+        return doll.GetComponent<BehaviorMecanim>().Node_HeadLookTurnFirst(target);
     }
 
     protected Node green_light_behavior()
     {
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
-
-        Node[] totalNodes = new Node[players.Length];
+        
+        Node[] totalNodes = new Node[players.Length+1];
         //totalNodes[players.Length] = green_light_doll_node();
         for (int i = 0; i < players.Length; i++)
         {
             Node playerNode = new DecoratorLoop(green_light_player_node(players[i]));
             totalNodes[i] = playerNode;
         }
+        Node dollNode = green_light_doll_node();
+        totalNodes[players.Length] = dollNode;
+
         Func<RunStatus> set_color_func = () => { screen.GetComponent<MeshRenderer>().material.color = Color.green; return RunStatus.Success; };
         Node set_color = new LeafInvoke(set_color_func);
         return new Sequence(set_color, new SequenceParallel(totalNodes));
@@ -160,13 +324,50 @@ public class MidGameBehaviorTree : MonoBehaviour
         // if alive: do other stuff
         // otherwise: play dead
         Func<bool> alive = () => (player.GetComponent<PlayerController>().alive);
-        Func<bool> dead = () => (!player.GetComponent<PlayerController>().alive);
-
+        Node stop_anim = player.GetComponent<BehaviorMecanim>().Node_BodyAnimation("DUCK", false);
         Node playDead = player.GetComponent<BehaviorMecanim>().ST_PlayBodyGesture("DYING", 100);
-        Node deadBehavior = new Sequence(new LeafAssert(dead), playDead);
-        Node aliveBehavior = new Sequence(new LeafAssert(alive), alive_node);
-        return new Selector(aliveBehavior, deadBehavior);
+        return new IfElseNode(alive, alive_node, new Sequence(stop_anim, playDead));
     }
+
+    
+
+    protected Node human_hit(GameObject player)
+    {
+        // find the nearest player that current player is facing
+        float radius = 2.0f;
+        float distance = 6.0f;
+        float angle_radius = Mathf.PI / 180.0f * 90.0f;
+
+        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
+        Func<RunStatus> before_hit_func = () =>
+        {
+            player.GetComponent<PlayerController>().moving = true;
+            return RunStatus.Success;
+        };
+        Node hit = player.GetComponent<BehaviorMecanim>().ST_PlayHandGesture("HITSTEALTH", Val.V(() => ((long)(500))));
+        Func<RunStatus> after_hit_func = () =>
+        {
+            for (int i = 0; i < players.Length; i++)
+            {
+                if (players[i].name == player.name)
+                {
+                    continue;
+                }
+                Vector3 direction = players[i].transform.position - player.transform.position;
+                float angle = Mathf.Acos(Vector3.Dot(direction.normalized, player.transform.forward));
+                Debug.Log("angle: " + (angle * 180.0f / Mathf.PI));
+                if ((direction.magnitude <= radius) && (angle <= angle_radius))
+                {
+                    players[i].GetComponent<PlayerController>().hit = true;
+                }
+            }
+            return RunStatus.Success;
+        };
+
+        return new Sequence(new LeafInvoke(before_hit_func), hit, new LeafInvoke(after_hit_func));
+        //return new Sequence(walk, hit, new LeafInvoke(after_hit));
+    }
+
 
     protected Node human_move(GameObject player)
     {
@@ -177,7 +378,9 @@ public class MidGameBehaviorTree : MonoBehaviour
             float horizontal = player.GetComponent<PlayerController>().horizontal;
             float vertical = player.GetComponent<PlayerController>().vertical;
             bool space = player.GetComponent<PlayerController>().space_triggered;
-            return ((!space) && Mathf.Abs(horizontal) < 1e-5f && Mathf.Abs(vertical) < 1e-5f);
+            bool p_trigger = player.GetComponent<PlayerController>().p_triggered;
+
+            return ((!p_trigger) && (!space) && Mathf.Abs(horizontal) < 1e-8f && Mathf.Abs(vertical) < 1e-8f);
         };
 
         Func<bool> moving = () =>
@@ -185,7 +388,8 @@ public class MidGameBehaviorTree : MonoBehaviour
             float horizontal = player.GetComponent<PlayerController>().horizontal;
             float vertical = player.GetComponent<PlayerController>().vertical;
             bool space = player.GetComponent<PlayerController>().space_triggered;
-            return !((!space) && Mathf.Abs(horizontal) < 1e-5f && Mathf.Abs(vertical) < 1e-5f);
+            bool p_trigger = player.GetComponent<PlayerController>().p_triggered;
+            return !((!p_trigger) && (!space) && Mathf.Abs(horizontal) < 1e-8f && Mathf.Abs(vertical) < 1e-8f);
         };
 
 
@@ -212,19 +416,26 @@ public class MidGameBehaviorTree : MonoBehaviour
 
         Func<bool> space_triggered = () => (player.GetComponent<PlayerController>().space_triggered);
         Func<bool> space_not_triggered = () => (!player.GetComponent<PlayerController>().space_triggered);
+        Func<bool> p_triggered = () => (player.GetComponent<PlayerController>().p_triggered);
+        Func<bool> p_not_triggered = () => (!player.GetComponent<PlayerController>().p_triggered);
 
-        Node move_action = player.GetComponent<BehaviorMecanim>().Node_GoTo(Val.V(get_target));
+        Node move_action = player.GetComponent<BehaviorMecanim>().Node_GoTo(get_target);
         Node pick_and_throw_action = pick_and_throw(player);
 
-        Node human_move = new Sequence(new LeafAssert(moving), new LeafAssert(space_not_triggered),  
-                                    new LeafInvoke(before_move_func), move_action, new LeafInvoke(after_move_func));
-        Node human_pick_and_throw = new Sequence(new LeafAssert(moving), new LeafAssert(space_triggered), 
+        Node human_move = new Sequence(new LeafInvoke(before_move_func), move_action, new LeafInvoke(after_move_func));
+        Node human_pick_and_throw = new Sequence(new LeafAssert(space_triggered),
                                     new LeafInvoke(before_move_func), pick_and_throw_action, new LeafInvoke(after_move_func));
-        Node human_not_move = new Sequence(new LeafAssert(not_moving), new LeafInvoke(after_move_func));  // set the moving to false
-        Node human_node = new Selector(human_move, human_pick_and_throw, human_not_move);
-        return human_node;
+
+        Node human_attack = new Sequence(new LeafAssert(p_triggered),
+                                         new LeafInvoke(before_move_func), human_hit(player), new LeafInvoke(after_move_func));
+
+        Node human_node = new Selector(human_pick_and_throw, human_attack, human_move);
+
+        Node total_node = check_hit(player, human_node);
+        return total_node;
     }
 
+    
     protected Node red_light_player_node(GameObject player)
     {
 
@@ -233,27 +444,72 @@ public class MidGameBehaviorTree : MonoBehaviour
             return CheckAlive_Player(player, human_move(player));
         }
 
-        NodeWeight[] red_light_actions = new NodeWeight[2];
+        NodeWeight[] red_light_actions = new NodeWeight[3];
 
         // action 1: random move
-        red_light_actions[0] = new NodeWeight(0.1f, walk_forward_player(player));
+        red_light_actions[0] = new NodeWeight(0.05f, walk_forward_player(player));
         // action 2: random move within startline
         red_light_actions[1] = new NodeWeight(0.9f, new LeafWait(1000));
+
+        // action 4: hit someone
+        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
+        GameObject selected_player = players[0];
+        while (true)
+        {
+            // sample one player until it's not the current player
+            int idx = UnityEngine.Random.Range(0, players.Length);
+            if (!players[idx].GetComponent<PlayerController>().alive)
+            {
+                continue;
+            }
+            if (players[idx].name == player.name)
+            {
+                continue;
+            }
+            selected_player = players[idx];
+            break;
+        }
+
+        red_light_actions[2] = new NodeWeight(0.05f, GoToAndHit(player, selected_player));
 
         Node alive_action = new SelectorShuffle(red_light_actions);
 
         Node alive_node = new Sequence(alive_action);
+        Node total_node = check_hit(player, alive_node);
 
-        return CheckAlive_Player(player, alive_node);
+        return CheckAlive_Player(player, total_node);
+    }
+
+    Func<bool> raycast_check(GameObject player)
+    {
+        Func<bool> raycast_f = () =>
+        {
+            // check if the ray cast from doll's eye to the player intersects with anything else
+            Vector3 player_relative_transform = player.transform.position - doll.GetComponent<DollController>().eye.transform.position;
+            RaycastHit hitInfo;
+            bool hit = Physics.Raycast(doll.GetComponent<DollController>().eye.transform.position,
+                            player_relative_transform.normalized, out hitInfo, player_relative_transform.magnitude);
+            // get info about the cloest collider
+            if (hit)
+            {
+                if (hitInfo.collider.gameObject.tag != "Player" && hitInfo.collider.gameObject.tag != "PlayerContext")
+                {
+                    return false;
+                }
+                return true;
+            }
+            return true;
+        };
+        return raycast_f;
     }
 
     protected Node look_and_shoot_doll(GameObject player)
     {
         // doll looks at the player that should be set dead, and then shoot a bullet
         // after that, set the player to dead
-        Val<Vector3> direction_target = Val.V(() => new Vector3(player.transform.position.x, 9.0f, player.transform.position.z));
+        Val<Vector3> direction_target = Val.V(() => new Vector3(player.transform.position.x, 1.0f, player.transform.position.z));
 
-        Node lookNode = doll.GetComponent<BehaviorMecanim>().Node_HeadLook(direction_target);
+        Node lookNode = doll.GetComponent<BehaviorMecanim>().Node_HeadLookTurnFirst(direction_target);
 
         Func<RunStatus> shooting_action = () =>
         {
@@ -265,7 +521,6 @@ public class MidGameBehaviorTree : MonoBehaviour
             rb.isKinematic = false;
             rb.useGravity = false;
             Vector3 vel = player.transform.position - bullet.transform.position;
-            Debug.Log("velocity: " + vel.ToString());
             vel = vel / vel.magnitude;
             float forceScale = 10000.0f;
             rb.AddForce(vel * forceScale, ForceMode.Acceleration);
@@ -275,7 +530,8 @@ public class MidGameBehaviorTree : MonoBehaviour
         Node shooting_node = new LeafInvoke(shooting_action);
         Node deadAction = new LeafInvoke(() => { player.GetComponent<PlayerController>().alive = false; return RunStatus.Success; });
         Node action = new Sequence(lookNode, shooting_node, deadAction);
-        return action;
+        Node check_and_action = new IfElseNode(raycast_check(player), action, new LeafAssert(() => (true)));
+        return check_and_action;
     }
 
     protected Node red_light_doll_check(GameObject player)
@@ -350,10 +606,10 @@ public class MidGameBehaviorTree : MonoBehaviour
         //Node root = new DecoratorLoop(new DecoratorForceStatus(RunStatus.Success, new SequenceParallel(trigger, roaming)));
 
         // loop until duration has passed
-        Node green_light_node = new LoopUntilTimeOut(green_light_behavior(), 5000);
-        Node red_light_node = new LoopUntilTimeOut(red_light_behavior(), 5000);
+        Node green_light_node = new LoopUntilTimeOut(green_light_behavior(), (long)(green_light_time*1000));
+        Node red_light_node = new LoopUntilTimeOut(red_light_behavior(), (long)(red_light_time*1000));
         Node root_sequence = new Sequence(green_light_node, red_light_node, new LeafWait(100));
-        Node loop_node = new LoopUntilTimeOut(root_sequence, 100050);
+        Node loop_node = new LoopUntilTimeOut(root_sequence, (long)(total_time*1000)+100);
 
         //Node after_math_node = new shoot_all_players_after();
         return loop_node;

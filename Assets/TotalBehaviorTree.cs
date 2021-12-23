@@ -16,6 +16,11 @@ public class TotalBehaviorTree : MonoBehaviour
     public GameObject startLine;
     public GameObject bulletPrefab;
 
+    public float pregame_time = 20.0f;
+    public float midgame_time = 100.0f;
+    public float green_light_time = 5.0f;
+    public float red_light_time = 5.0f;
+
     private BehaviorAgent behaviorAgent;
 
     public StoryBehaviorTree pregameObj;
@@ -37,6 +42,11 @@ public class TotalBehaviorTree : MonoBehaviour
         pregameObj.doll = doll;
         pregameObj.startLine = startLine;
         pregameObj.bulletPrefab = bulletPrefab;
+        pregameObj.leftHand = leftHand;
+        pregameObj.rightHand = rightHand;
+        pregameObj.leftFoot = leftFoot;
+        pregameObj.rightFoot = rightFoot;
+        pregameObj.total_time = pregame_time;
 
         midgameObj = new MidGameBehaviorTree();
         midgameObj.doll = doll;
@@ -47,6 +57,9 @@ public class TotalBehaviorTree : MonoBehaviour
         midgameObj.rightFoot = rightFoot;
         midgameObj.endLine = endLine;
         midgameObj.screen = screen;
+        midgameObj.total_time = midgame_time;
+        midgameObj.green_light_time = green_light_time;
+        midgameObj.red_light_time = red_light_time;
 
         endgameObj = new EndGameBehaviorTree();
         endgameObj.doll = doll;
@@ -54,6 +67,8 @@ public class TotalBehaviorTree : MonoBehaviour
         endgameObj.rightFoot = rightFoot;
         endgameObj.leftHand = leftHand;
         endgameObj.rightHand = rightHand;
+        endgameObj.endLine = endLine;
+        endgameObj.bulletPrefab = bulletPrefab;
 
         behaviorAgent = new BehaviorAgent(this.BuildTreeRoot());
         BehaviorManager.Instance.Register(behaviorAgent);
@@ -65,6 +80,8 @@ public class TotalBehaviorTree : MonoBehaviour
     {
         
     }
+    
+
 
     protected Node BuildTreeRoot()
     {
